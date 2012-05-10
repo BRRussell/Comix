@@ -44,7 +44,7 @@ class MainUI(gtk.UIManager):
             ('zoom_out', gtk.STOCK_ZOOM_OUT, _('Zoom _out'),
                 'KP_Subtract', None, window.manual_zoom_out),
             ('zoom_original', gtk.STOCK_ZOOM_100, _('O_riginal size'),
-                '<Control>0', None, window.manual_zoom_original),
+                '<Control>0', None, window.manual_zoom_original),  
             ('close', gtk.STOCK_CLOSE, _('_Close'),
                 '<Control>w', None, window.file_handler.close_file),
             ('quit', gtk.STOCK_QUIT, _('_Quit'),
@@ -59,8 +59,6 @@ class MainUI(gtk.UIManager):
                 None, None, window.flip_horizontally),
             ('flip_vert', 'comix-flip-vertical', _('Flip _vertically'),
                 None, None, window.flip_vertically),
-            ('extract_page', None, _('Extract page...'),
-                None, None, window.extract_page),
             ('menu_zoom', 'comix-zoom', _('Manual _Zoom')),
             ('menu_recent', None, _('Open _recent')),
             ('menu_bookmarks', None, _('_Bookmarks')),
@@ -95,10 +93,10 @@ class MainUI(gtk.UIManager):
             ('keep_transformation', None, _('_Keep transformation'),
                 'k', None, window.change_keep_transformation),
             ('slideshow', gtk.STOCK_MEDIA_PLAY, _('Run _slideshow'),
-                '<Control>S', None, window.slideshow.toggle),
+                '<Control>s', None, window.slideshow.toggle),
             ('lens', 'comix-lens', _('Magnifying _glass'),
                 'g', None, window.glass.toggle)])
-
+        
         # Note: Don't change the default value for the radio buttons unless
         # also fixing the code for setting the correct one on start-up.
         self._actiongroup.add_radio_actions([
@@ -116,6 +114,11 @@ class MainUI(gtk.UIManager):
         self._actiongroup.add_actions([
             ('about', gtk.STOCK_ABOUT, _('_About'),
                 None, None, about.open_dialog),
+#BRR TEST
+            ('saveactive', gtk.STOCK_SAVE_AS, _('_Save Active Image'),
+                '<Control>a', None, filechooser.open_save_filechooser_dialog),
+            ('openrandom', gtk.STOCK_OPEN, _('_Open Random Archive in Tree'),
+                '<Control>r', None, filechooser.open_random_filechooser_dialog),
             ('comments', 'comix-comments', _('_View comments...'),
                 'c', None, comment.open_dialog),
             ('edit_archive', gtk.STOCK_EDIT, _('_Edit archive...'),
@@ -161,13 +164,15 @@ class MainUI(gtk.UIManager):
                     <menuitem action="library" />
                     <separator />
                     <menuitem action="edit_archive" />
-                    <menuitem action="extract_page" />
                     <separator />
                     <menuitem action="properties" />
                     <menuitem action="comments" />
                     <separator />
                     <menu action="menu_recent">
                     </menu>
+                    <separator />
+                    <menuitem action="saveactive" />
+                    <menuitem action="openrandom" />
                     <separator />
                     <menuitem action="close" />
                     <menuitem action="quit" />
@@ -244,8 +249,6 @@ class MainUI(gtk.UIManager):
                 <menuitem action="fit_height_mode" />
                 <menuitem action="fit_manual_mode" />
                 <separator />
-                <menuitem action="extract_page" />
-                <separator />
                 <menu action="menu_transform">
                     <menuitem action="rotate_90" />
                     <menuitem action="rotate_270" />
@@ -285,7 +288,7 @@ class MainUI(gtk.UIManager):
         # Is there no built-in way to do this?
         self.get_widget('/Tool/expander').set_expand(True)
         self.get_widget('/Tool/expander').set_sensitive(False)
-
+        
         self.get_widget('/Tool/first_page').set_tooltip_text(_('First page'))
         self.get_widget('/Tool/previous_page').set_tooltip_text(
             _('Previous page'))

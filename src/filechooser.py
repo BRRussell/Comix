@@ -1,7 +1,7 @@
 """filechooser.py - Custom FileChooserDialog implementations."""
 
 import os
-
+import fnmatch
 import gtk
 import pango
 
@@ -9,11 +9,15 @@ import encoding
 import image
 import labels
 from preferences import prefs
+from random import choice
+import glob
+
 import thumbnail
 
 _main_filechooser_dialog = None
+_save_filechooser_dialog = None
 _library_filechooser_dialog = None
-
+matches = [ ]
 
 class _ComicFileChooserDialog(gtk.Dialog):
 
@@ -21,7 +25,7 @@ class _ComicFileChooserDialog(gtk.Dialog):
     buggy with the preview widget. The <action> argument dictates what type
     of filechooser dialog we want (i.e. it is gtk.FILE_CHOOSER_ACTION_OPEN
     or gtk.FILE_CHOOSER_ACTION_SAVE).
-
+    
     This is a base class for the _MainFileChooserDialog, the
     _LibraryFileChooserDialog and the StandAloneFileChooserDialog.
 
@@ -29,7 +33,7 @@ class _ComicFileChooserDialog(gtk.Dialog):
     called once the filechooser has done its job and selected some files.
     If the dialog was closed or Cancel was pressed, <paths> is the empty list.
     """
-
+    
     _last_activated_file = None
 
     def __init__(self, action=gtk.FILE_CHOOSER_ACTION_OPEN):
@@ -89,7 +93,7 @@ class _ComicFileChooserDialog(gtk.Dialog):
         self.add_filter(_('Tar archives'),
             ('application/x-tar', 'application/x-gzip',
             'application/x-bzip2', 'application/x-cbt'))
-
+        
         try:
             if (self.__class__._last_activated_file is not None
                     and os.path.isfile(self.__class__._last_activated_file)):
@@ -119,7 +123,7 @@ class _ComicFileChooserDialog(gtk.Dialog):
         self.filechooser.set_current_folder(path)
 
     def _response(self, widget, response):
-        """Return a list of the paths of the chosen files, or None if the
+        """Return a list of the paths of the chosen files, or None if the 
         event only changed the current directory.
         """
         if response == gtk.RESPONSE_OK:
@@ -174,9 +178,9 @@ class _ComicFileChooserDialog(gtk.Dialog):
 
 
 class _MainFileChooserDialog(_ComicFileChooserDialog):
-
+    
     """The normal filechooser dialog used with the "Open" menu item."""
-
+    
     def __init__(self, window):
         _ComicFileChooserDialog.__init__(self)
         self._window = window
@@ -188,9 +192,6 @@ class _MainFileChooserDialog(_ComicFileChooserDialog):
         self.filechooser.add_filter(ffilter)
         self.add_filter(_('JPEG images'), ('image/jpeg',))
         self.add_filter(_('PNG images'), ('image/png',))
-        self.add_filter(_('GIF images'), ('image/gif',))
-        self.add_filter(_('TIFF images'), ('image/tiff',))
-        self.add_filter(_('BMP images'), ('image/bmp',))
 
         filters = self.filechooser.list_filters()
         try:
@@ -218,10 +219,60 @@ class _MainFileChooserDialog(_ComicFileChooserDialog):
         else:
             _close_main_filechooser_dialog()
 
+class _SaveFileChooserDialog(_ComicFileChooserDialog):
+    
+    """The normal filechooser dialog used with the "Save" menu item."""
+    
+    def __init__(self, window):
+        _ComicFileChooserDialog.__init__(self, action=gtk.FILE_CHOOSER_ACTION_SAVE)
+        self._window = window
+        self.set_transient_for(window)
+
+        ffilter = gtk.FileFilter()
+        ffilter.add_pixbuf_formats()
+        ffilter.set_name(_('All images'))
+        self.filechooser.add_filter(ffilter)
+        self.add_filter(_('JPEG images'), ('image/jpeg',))
+        self.add_filter(_('PNG images'), ('image/png',))
+
+        #filename = window.file_handler.get_pretty_current_filename()
+        path = window.file_handler.get_path_to_page()
+        filename = os.path.basename(path)
+        self.set_save_name(filename)
+
+        filters = self.filechooser.list_filters()
+        try:
+            # When setting this to the first filter ("All files"), this
+            # fails on some GTK+ versions and sets the filter to "blank".
+            # The effect is the same though (i.e. display all files), and
+            # there is no solution that I know of, so we'll have to live
+            # with it. It only happens the second time a dialog is created
+            # though, which is very strange.
+            self.filechooser.set_filter(filters[
+                prefs['last filter in main filechooser']])
+        except:
+            self.filechooser.set_filter(filters[0])
+
+    def files_chosen(self, paths):
+        if paths:
+            try: # For some reason this fails sometimes (GTK+ bug?)
+                filter_index = self.filechooser.list_filters().index(
+                    self.filechooser.get_filter())
+                prefs['last filter in main filechooser'] = filter_index
+            except:
+                pass
+            _close_save_filechooser_dialog()
+            print "Paths: %s\n" % paths[0]
+            self._window.file_handler.save_file(paths[0])
+        else:
+            _close_save_filechooser_dialog()
+
+
+    
 class _LibraryFileChooserDialog(_ComicFileChooserDialog):
-
+    
     """The filechooser dialog used when adding books to the library."""
-
+    
     def __init__(self, library):
         _ComicFileChooserDialog.__init__(self)
         self._library = library
@@ -229,7 +280,7 @@ class _LibraryFileChooserDialog(_ComicFileChooserDialog):
         self.filechooser.set_select_multiple(True)
         self.filechooser.connect('current_folder_changed',
             self._set_collection_name)
-
+        
         self._collection_button = gtk.CheckButton(
             '%s:' % _('Automatically add the books to this collection'),
             False)
@@ -258,7 +309,7 @@ class _LibraryFileChooserDialog(_ComicFileChooserDialog):
                 prefs['last filter in library filechooser']])
         except Exception:
             self.filechooser.set_filter(filters[1])
-
+    
     def _set_collection_name(self, *args):
         """Set the text in the ComboBoxEntry to the name of the current
         directory.
@@ -289,13 +340,13 @@ class _LibraryFileChooserDialog(_ComicFileChooserDialog):
 
 
 class StandAloneFileChooserDialog(_ComicFileChooserDialog):
-
+    
     """A simple filechooser dialog that is designed to be used with the
     gtk.Dialog.run() method. The <action> dictates what type of filechooser
     dialog we want (i.e. save or open). If the type is an open-dialog, we
     use multiple selection by default.
     """
-
+    
     def __init__(self, action=gtk.FILE_CHOOSER_ACTION_OPEN):
         _ComicFileChooserDialog.__init__(self, action)
         if action == gtk.FILE_CHOOSER_ACTION_OPEN:
@@ -308,9 +359,7 @@ class StandAloneFileChooserDialog(_ComicFileChooserDialog):
         self.filechooser.add_filter(ffilter)
         self.add_filter(_('JPEG images'), ('image/jpeg',))
         self.add_filter(_('PNG images'), ('image/png',))
-        self.add_filter(_('GIF images'), ('image/gif',))
-        self.add_filter(_('TIFF images'), ('image/tiff',))
-        self.add_filter(_('BMP images'), ('image/bmp',))
+
 
     def get_paths(self):
         """Return the selected paths. To be called after run() has returned
@@ -330,6 +379,28 @@ def open_main_filechooser_dialog(action, window):
     else:
         _main_filechooser_dialog.present()
 
+def open_random_filechooser_dialog(action, window):
+    """Open the main filechooser dialog."""
+    global _main_filechooser_dialog
+    global matches 
+#    matches = []
+    if not matches:
+        for root, dirnames, filenames in os.walk('.'):
+            for filename in fnmatch.filter(filenames, '*.rar'):
+                matches.append(os.path.join(root,filename))
+            for filename in fnmatch.filter(filenames, '*.zip'):
+                matches.append(os.path.join(root,filename))
+    
+    selection = choice(matches)
+    selection = os.getcwd()+"/"+selection
+    window.file_handler.open_file(selection)
+
+    if _main_filechooser_dialog is None:
+        _main_filechooser_dialog = _MainFileChooserDialog(window)
+        _close_main_filechooser_dialog()
+    else:
+        _main_filechooser_dialog.present()
+
 
 def _close_main_filechooser_dialog(*args):
     """Close the main filechooser dialog."""
@@ -337,6 +408,24 @@ def _close_main_filechooser_dialog(*args):
     if _main_filechooser_dialog is not None:
         _main_filechooser_dialog.destroy()
         _main_filechooser_dialog = None
+
+def open_save_filechooser_dialog(action, window):
+    """Open the save filechooser dialog."""
+    global _save_filechooser_dialog
+    if _save_filechooser_dialog is None:
+        _save_filechooser_dialog = _SaveFileChooserDialog(window)
+#        _save_filechooser_dialog = StandAloneFileChooserDialog(gtk.FILE_CHOOSER_ACTION_SAVE)
+    else:
+        _save_filechooser_dialog.present()
+
+
+def _close_save_filechooser_dialog(*args):
+    """Close the save filechooser dialog."""
+    global _save_filechooser_dialog
+    if _save_filechooser_dialog is not None:
+        _save_filechooser_dialog.destroy()
+        _save_filechooser_dialog = None
+
 
 
 def open_library_filechooser_dialog(library):
@@ -354,3 +443,5 @@ def close_library_filechooser_dialog(*args):
     if _library_filechooser_dialog is not None:
         _library_filechooser_dialog.destroy()
         _library_filechooser_dialog = None
+
+
